@@ -38,29 +38,6 @@ class BaseModel(db.Model):
         schema = 'talentspear_auth'
 
 
-'''
-class UserProfile(BaseModel):
-    aspiration              = TextField(db_column='ASPIRATION', null=True)
-    currentCity             = TextField(db_column='CURRENT_CITY', null=True)
-    fullName                = TextField(db_column='FULL_NAME', null=True)
-    gender                  = TextField(db_column='GENDER', null=True)
-    aadhaarNumber           = TextField(db_column='AADHAAR_NUMBER', null=True)
-    mobileNumber            = TextField(db_column='MOBILE_NUMBER', null=True)
-    webPresence             = JSONField(db_column='WEB_PRESENCE', null=True)
-    profileId               = PrimaryKeyField(db_column='PROFILE_ID', sequence='profile_id_sequence')
-    skills                  = JSONField(db_column='SKILLS', null=True)
-    interest                = TextField(db_column='INTEREST', null=True)
-    certificates            = TextField(db_column='CERTIFICATES', null=True)
-    user                    = IntegerField(db_column='USER_ID')
-    userDetails             = JSONField(db_column='USER_DETAILS', null=True)
-    dateOfBirth             = DateTimeField(db_column='DATE_OF_BIRTH')
-    projects                = JSONField(db_column='PROJECTS')
-    
-    class Meta:
-        db_table = 'USER_PROFILE'
-
-'''
-
 class User(BaseModel):
     id = PrimaryKeyField(db_column = 'USER_ID', sequence='user_id_sequence')
     username =  TextField(db_column='USERNAME', null=True)
@@ -73,8 +50,8 @@ class Client(BaseModel):
     client_id = TextField(db_column='CLIENT_ID', primary_key=True)
     client_secret = TextField(db_column='CLIENT_SECRET')
     user_id = ForeignKeyField(db_column = 'USER_ID', rel_model=User, to_field='id')
-    _redirect_uris = TextField(db_column='REDIRECT_URIS')
-    _default_scopes = TextField(db_column='DEFAULT_SCOPES')
+    redirect_uris = TextField(db_column='REDIRECT_URIS')
+    default_scopes = TextField(db_column='DEFAULT_SCOPES')
     
         
     class Meta:
@@ -96,8 +73,8 @@ class Client(BaseModel):
 # 
 #     @property
 #     def default_scopes(self):
-#         if self._default_scopes:
-#             return self._default_scopes.split()
+#         if self.default_scopes:
+#             return self.default_scopes.split()
 #         return []
 
 
@@ -110,7 +87,7 @@ class Grant(BaseModel):
 
     redirect_uri = TextField(db_column='REDIRECT_URI', null=True)
     expires = DateTimeField(db_column='EXPIRES', null=True)
-    _scopes = TextField(db_column='SCOPES', null=True)
+    scopes = TextField(db_column='SCOPES', null=True)
     
         
     class Meta:
@@ -139,7 +116,7 @@ class Token(BaseModel):
     access_token = TextField(db_column='ACCESS_TOKEN')
     refresh_token = TextField(db_column='REFRESH_TOKEN')
     expires = DateTimeField(db_column='EXPIRES')
-    _scopes = TextField(db_column='SCOPES')
+    scopes = TextField(db_column='SCOPES')
     
         
     class Meta:
@@ -168,12 +145,10 @@ def home():
         username = request.form.get('username')
         try:
             user = User.select().where(User.username == username).get()
-            session['id'] = user.id
-            return render_template('home.html', user=user)
         except Exception:
             user = User.create(username=username)
-            session['id'] = user.id
-            return render_template('home.html', user=user)
+        session['id'] = user.id
+        return render_template('home.html', user=user)
     if request.method == 'GET':
         return render_template('home.html', user=current_user())
 
@@ -195,8 +170,8 @@ def client_function():
         item = Client.create(
         client_id=gen_salt(40),
         client_secret=gen_salt(50),
-        _redirect_uris= 'http://localhost:8000/authorized',
-        _default_scopes='email',
+        redirect_uris= 'http://localhost:8000/authorized',
+        default_scopes='email',
         user_id=user.id
         )
         re = model_to_dict(item)
@@ -208,12 +183,12 @@ def client_function():
 
 @oauth.clientgetter
 def load_client(client_id):
-    return Client.select().where(client_id=client_id).first()
+    return Client.select().where(Client.client_id==client_id).get()
 
 
 @oauth.grantgetter
 def load_grant(client_id, code):
-    return Grant.select().where(client_id=client_id, code=code).first()
+    return Grant.select().where(Grant.client_id==client_id & Grant.code==code).get()
 
 
 @oauth.grantsetter
@@ -224,7 +199,7 @@ def save_grant(client_id, code, request, *args, **kwargs):
         client_id=client_id,
         code=code['code'],
         redirect_uri=request.redirect_uri,
-        _scopes=' '.join(request.scopes),
+        scopes=' '.join(request.scopes),
         user=current_user(),
         expires=expires
     )
@@ -235,17 +210,14 @@ def save_grant(client_id, code, request, *args, **kwargs):
 @oauth.tokengetter
 def load_token(access_token=None, refresh_token=None):
     if access_token:
-        return Token.select().where(access_token=access_token).first()
+        return Token.select().where(Token.access_token==access_token).get()
     elif refresh_token:
-        return Token.select().where(refresh_token=refresh_token).first()
+        return Token.select().where(Token.refresh_token==refresh_token).get()
 
 
 @oauth.tokensetter
 def save_token(token, request, *args, **kwargs):
-    Token.delete().where(
-        client_id=request.client.client_id,
-        user_id=request.user.id
-    ).execute
+# Token.delete().where(Token.client_id==request.client.client_id & Token.user_id==request.user.id).execute
     # make sure that every client has only one token connected to a user
 #     for t in toks:
 #         db.session.delete(t)
@@ -257,7 +229,7 @@ def save_token(token, request, *args, **kwargs):
         access_token=token['access_token'],
         refresh_token=token['refresh_token'],
         token_type=token['token_type'],
-        _scopes=token['scope'],
+        scopes=token['scope'],
         expires=expires,
         client_id=request.client.client_id,
         user_id=request.user.id,
@@ -280,7 +252,7 @@ def authorize(*args, **kwargs):
         return redirect('/')
     if request.method == 'GET':
         client_id = kwargs.get('client_id')
-        client = Client.query.filter_by(client_id=client_id).first()
+        client = Client.select().where(Client.client_id==client_id).get()
         kwargs['client'] = client
         kwargs['user'] = user
         return render_template('authorize.html', **kwargs)
