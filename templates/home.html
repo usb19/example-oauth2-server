@@ -8,13 +8,16 @@
   {% if user %}
     <p>You are {{ user.username }}</p>
   {% else %}
-    <p>You are not authenticated</p>
-  {% endif %}
+    {% endif %}
 
-  <p>Type any username:</p>
-  <form method="post" action="/">
-    <input type="text" name="username">
-    <input type="submit">
-  </form>
+  	<p>Type your username:</p>
+  	<form method="post" action="/">
+    	<input type="text" name="username" placeholder="Username"><br>
+    	<input type="password" name="password" placeholder="Password"><br>
+    	<input type="submit">
+  	</form>
+  	<form method="get" action="/signup">
+  		 <button type="submit">Sign Up</button>
+  	</form>
 </body>
 </html>

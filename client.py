@@ -1,9 +1,9 @@
-from flask import Flask, url_for, session, request, jsonify
+from flask import Flask, url_for, session, request, redirect, jsonify
 from flask_oauthlib.client import OAuth
 
 
-CLIENT_ID = '6pgs0kfBYTRDEk6bFXn46R5F7sT8T0IV9LYct9Jq'
-CLIENT_SECRET = '72awSyFEDOlWxKYFgbDc6rNAbjCjZbtS4bmgA3b80941OvnYrQ'
+CLIENT_ID = 'YDRw3txqO3LyathTPWw1SRzBSNOYZByR3iHKDFBx'
+CLIENT_SECRET = 'exJAgbHwgJnuzqP8jd0L6ZqDpcK8jckooRTWZPzEqVGBAfrAJW'
 
 
 app = Flask(__name__)
@@ -23,11 +23,16 @@ remote = oauth.remote_app(
 )
 
 
-@app.route('/')
-def index():
+@app.route('/result')
+def result():
     if 'remote_oauth' in session:
         resp = remote.get('me')
         return jsonify(resp.data)
+    else:
+        return jsonify({"message":"User is not logged in"})
+
+@app.route('/')
+def index():
     next_url = request.args.get('next') or request.referrer or None
     return remote.authorize(
         callback=url_for('authorized', next=next_url, _external=True)
@@ -42,9 +47,9 @@ def authorized():
             request.args['error_reason'],
             request.args['error_description']
         )
-    print(resp)
     session['remote_oauth'] = (resp['access_token'], '')
-    return jsonify(oauth_token=resp['access_token'])
+    return redirect('/result')
+#jsonify(oauth_token=resp['access_token'])
 
 
 @remote.tokengetter

@@ -9,7 +9,7 @@ from flask_oauthlib.provider import OAuth2Provider
 from playhouse.flask_utils import FlaskDB
 from playhouse.shortcuts import model_to_dict
 
-from playhouse.postgres_ext import DateTimeField, ForeignKeyField, TextField, PrimaryKeyField, IntegerField
+from playhouse.postgres_ext import DateTimeField, ForeignKeyField, TextField, PrimaryKeyField
 
 
 DATABASE = {
@@ -60,31 +60,29 @@ class Client(BaseModel):
 #     @property
 #     def client_type(self):
 #         return 'public'
-# 
+# # 
 #     @property
 #     def redirect_uris(self):
-#         if self._redirect_uris:
-#             return self._redirect_uris.split()
+#         if self.redirect_uris:
+#             return self.redirect_uris
 #         return []
-# 
-#     @property
-#     def default_redirect_uri(self):
-#         return self.redirect_uris[0]
-# 
+# # 
+    @property
+    def default_redirect_uri(self):
+        return self.redirect_uris
+# # 
 #     @property
 #     def default_scopes(self):
 #         if self.default_scopes:
-#             return self.default_scopes.split()
+#             return self.default_scopes
 #         return []
 
 
 class Grant(BaseModel):
-    grant_id = PrimaryKeyField(TextField,db_column = 'GRANT_ID')
+    grant_id = PrimaryKeyField(db_column = 'GRANT_ID', sequence='grant_id_sequence')
     user_id = ForeignKeyField(db_column = 'USER_ID', rel_model=User, to_field='id')
     client_id = ForeignKeyField(db_column = 'CLIENT_ID', rel_model=Client, to_field='client_id')
-
     code = TextField(db_column='CODE', null=False)
-
     redirect_uri = TextField(db_column='REDIRECT_URI', null=True)
     expires = DateTimeField(db_column='EXPIRES', null=True)
     scopes = TextField(db_column='SCOPES', null=True)
@@ -98,16 +96,16 @@ class Grant(BaseModel):
 #         db.session.delete(self)
 #         db.session.commit()
 #         return self
-# 
+# # 
 #     @property
 #     def scopes(self):
-#         if self._scopes:
+#         if self.scopes:
 #             return self._scopes.split()
 #         return []
 
 
 class Token(BaseModel):
-    token_id = PrimaryKeyField(IntegerField,db_column = 'TOKEN_ID')
+    token_id = PrimaryKeyField(db_column = 'TOKEN_ID', sequence='token_id_sequence')
     user_id = ForeignKeyField(db_column = 'USER_ID', rel_model=User, to_field='id')
     client_id = ForeignKeyField(db_column = 'CLIENT_ID', rel_model=Client, to_field='client_id')
 
@@ -121,12 +119,12 @@ class Token(BaseModel):
         
     class Meta:
         db_table='TOKEN'
-
 # 
+# # 
 #     @property
 #     def scopes(self):
 #         if self._scopes:
-#             return self._scopes.split()
+#             return self.scopes.split()
 #         return []
 
 
@@ -152,6 +150,10 @@ def home():
     if request.method == 'GET':
         return render_template('home.html', user=current_user())
 
+@app.route('/signup', methods=('GET', 'POST'))
+def signup_page():
+    return render_template('signup.html')
+    
 
 @app.route('/clients')
 def client_function():
@@ -163,9 +165,7 @@ def client_function():
         return jsonify(
         client_id=res.client_id,
            client_secret=res.client_secret
-           )  
-#         res = Client.update(client_secret=gen_salt(50)).where(Client.user_id.id==user.id)
-#         print model_to_dict(res)
+           )
     except Exception:
         item = Client.create(
         client_id=gen_salt(40),
@@ -188,23 +188,26 @@ def load_client(client_id):
 
 @oauth.grantgetter
 def load_grant(client_id, code):
-    return Grant.select().where(Grant.client_id==client_id & Grant.code==code).get()
-
+    return Grant.select().where(Grant.client_id.contains(client_id) & Grant.code.contains(code)).get()
 
 @oauth.grantsetter
 def save_grant(client_id, code, request, *args, **kwargs):
     # decide the expires time yourself
     expires = datetime.utcnow() + timedelta(seconds=100)
-    grant = Grant(
-        client_id=client_id,
-        code=code['code'],
-        redirect_uri=request.redirect_uri,
-        scopes=' '.join(request.scopes),
-        user=current_user(),
-        expires=expires
-    )
-    result = Grant.create(grant)
-    return result
+    try:
+        user = current_user()
+        grant = Grant.create(
+            client_id=client_id,
+            code=code['code'],
+            redirect_uri=request.redirect_uri,
+            scopes=request.scopes,
+            expires=expires,
+            user_id= user.id
+        )
+        return grant
+    except Exception as e:
+        print e
+        return None 
 
 
 @oauth.tokengetter
@@ -217,24 +220,24 @@ def load_token(access_token=None, refresh_token=None):
 
 @oauth.tokensetter
 def save_token(token, request, *args, **kwargs):
-# Token.delete().where(Token.client_id==request.client.client_id & Token.user_id==request.user.id).execute
-    # make sure that every client has only one token connected to a user
-#     for t in toks:
-#         db.session.delete(t)
-
+    # delete all the existing old tokens
+    Token.delete().where((Token.user_id==request.client.user_id.id) & (Token.client_id.contains(request.client.client_id))).execute()
     expires_in = token.pop('expires_in')
     expires = datetime.utcnow() + timedelta(seconds=expires_in)
-
-    tok = Token.create(
+    try:
+        tok = Token.create(
         access_token=token['access_token'],
         refresh_token=token['refresh_token'],
         token_type=token['token_type'],
         scopes=token['scope'],
         expires=expires,
         client_id=request.client.client_id,
-        user_id=request.user.id,
-    )
-    return tok
+        user_id=request.user.id
+        )
+        return tok
+    except Exception as e:
+        print e
+        return None
 
 
 @app.route('/oauth/token', methods=['GET', 'POST'])
